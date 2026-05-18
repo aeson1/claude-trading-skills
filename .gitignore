@@ -46,3 +46,4 @@ state/
 htmlcov/
 .coverage
 # .secrets.baseline is tracked — needed by detect-secrets pre-commit hook
+.gstack/

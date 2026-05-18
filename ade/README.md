@@ -106,3 +106,55 @@ idempotently. `--check` verifies the full table set.
 `create_trade_ticket` only ever produces a pre-filled Montrose URL the user
 confirms in-app — it never executes an order, and the skill never invokes it
 without an explicit request.
+
+## exposure-adapter — fix the sibling-skill schema gap
+
+`ade/exposure-adapter/adapt_inputs.py` normalizes `market-breadth-analyzer`
+and `market-top-detector` JSON (which nest the score under
+`composite.composite_score`) into the top-level `breadth_score` /
+`top_risk_score` keys that `exposure-coach` actually reads. Without it
+exposure-coach silently drops both inputs and stays LOW-confidence /
+uptrend-only. With it, exposure-coach ingests all four critical signals
+(breadth/uptrend/regime/top-risk) → MEDIUM confidence. Additive; no upstream
+edits (survives `git pull upstream`). top-risk uses a zone→safety map
+(green 85 / yellow 65 / orange 40 / red 20) since the two composites are not
+the same calibrated scale.
+
+Flow: run the regime trio → `adapt_inputs.py` → exposure-coach with
+`--breadth reports/_adapted_breadth.json --top-risk reports/_adapted_top_risk.json`.
+
+## market-posture mirror
+
+`schema/0004_market_posture.sql` adds `trading.market_posture` (one row per
+day, keyed by `as_of`; RLS + explicit `ade_sync` policy, since 0003's policy
+loop only covered the original five tables). `sync_posture.py` upserts the
+latest exposure-coach posture + an optional forces-digest file via the scoped
+Keychain credential.
+
+> **Admin-gated:** 0004 is DDL and `ade_sync` cannot CREATE TABLE (by
+> design). To activate: temporarily re-add `SUPABASE_ADMIN_DB_URL` (Session
+> pooler) to `.env`, run `apply_migration.py` (applies 0001–0004
+> idempotently), remove it again. Thereafter `sync_posture.py` runs on the
+> scoped Keychain credential like the other sidecars.
+
+## portfolio-analysis — the weekly decision document
+
+`ade/portfolio-analysis/` (skill symlinked into `.claude/skills/`) is the
+top-level deliverable: a true portfolio analysis report that ends in an
+explicit prioritized **Next Steps / Decisions** block.
+
+| Piece | What |
+|---|---|
+| `SKILL.md` | Claude-driven orchestration (Montrose refresh → market inputs → forces → build → PDF → persist) |
+| `run_market_inputs.sh` | Driver: regime trio + ADE adapter + exposure-coach (FMP from Keychain) |
+| `build_report.py` | Deterministic assembler → `reports/portfolio_analysis_<as_of>.md` |
+
+Pipeline: holdings snapshot + exposure-coach posture (via the ADE adapter) +
+macro-forces digest → markdown → **PDF** (`make-pdf` skill, cover + TOC) →
+**Supabase** (`sync_posture.py` → `trading.market_posture`, admin-gated 0004).
+
+**Cadence:** weekly + event-driven (re-run on a posture regime-flip or major
+forces-KB update). The report header states the next scheduled review date.
+The sector map in `build_report.py` is an editable heuristic — refine as the
+book changes. Immaterial trims (< max(2000 SEK, 1% of invested)) are demoted
+to "monitor only" so the action list stays signal.

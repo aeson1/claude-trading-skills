@@ -84,6 +84,21 @@ Requires the one-time setup in `ade/README.md` (migrations applied,
    Montrose; the user must review and submit it there.* Never imply the
    order was placed.
 
+## Output — always end with Decisions
+
+Every analysis MUST close with a prioritized **Next Steps / Decisions**
+block. Findings without an action layer are incomplete. Use:
+
+1. **Do now** — highest-conviction action(s) with concrete size/level
+   (e.g., "trim X by N units / SEK to Y% cap").
+2. **Decide** — explicit choices owed by the user (with the trade-off).
+3. **Then / when** — staged or posture-gated follow-ups, and which skill
+   to run next.
+4. **Would change this** — the signal/level that flips the recommendation.
+
+Keep it scannable and specific. State it is analysis, not advice, and that
+nothing was executed.
+
 ## Guardrails
 
 - Read-only by default. No `create_trade_ticket` without an explicit,
