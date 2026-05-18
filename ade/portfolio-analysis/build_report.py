@@ -64,7 +64,7 @@ def _load(p: Path | None) -> Any:
     return json.loads(p.read_text()) if p and p.is_file() else None
 
 
-def build(holdings_p, posture_p, forces_p) -> tuple[str, str]:
+def build(holdings_p, posture_p, forces_p, eq_p=None) -> tuple[str, str]:
     snap = _load(holdings_p)
     if not snap:
         raise SystemExit(2)
@@ -124,6 +124,11 @@ def build(holdings_p, posture_p, forces_p) -> tuple[str, str]:
     conf = P.get("confidence", "n/a")
     part = P.get("participation", "n/a")
 
+    # equity scores (bottom-up; optional)
+    EQ = _load(eq_p) or {}
+    eq_rows = EQ.get("scores") or []
+    eq_by_tk = {e.get("ticker"): e for e in eq_rows}
+
     # forces (condensed: keep the implication section)
     forces_txt = ""
     if forces_p and forces_p.is_file():
@@ -162,13 +167,16 @@ def build(holdings_p, posture_p, forces_p) -> tuple[str, str]:
 
     add("## 2. Holdings & weights")
     add("")
-    add("| Holding | Sector | Weight | Value | Unrealized |")
-    add("|---|---|--:|--:|--:|")
+    add("| Holding | Sector | Weight | Value | Unrealized | Score |")
+    add("|---|---|--:|--:|--:|--:|")
     for r in rows:
         up = (f"{r['ur_pct']:+.0f}%"
               if isinstance(r["ur_pct"], (int, float)) else "n/a")
+        e = eq_by_tk.get(r["ticker"]) or {}
+        sc = (f"{e['score']:.0f}"
+              if isinstance(e.get("score"), (int, float)) else "n/d")
         add(f"| {r['name']}{' ⚠lev' if r['lev'] else ''} | {r['sector']} | "
-            f"{r['w']:.1f}% | {_sek(r['mv'])} | {up} |")
+            f"{r['w']:.1f}% | {_sek(r['mv'])} | {up} | {sc} |")
     add("")
 
     add("## 3. Concentration & risk")
@@ -254,6 +262,42 @@ def build(holdings_p, posture_p, forces_p) -> tuple[str, str]:
             f"(+{r['ur_pct']:.0f}% unrealized, {r['w']:.1f}%).")
     add("")
 
+    if eq_rows:
+        scored = sorted(
+            (e for e in eq_rows if isinstance(e.get("score"), (int, float))),
+            key=lambda e: -e["score"],
+        )
+        nd = [e for e in eq_rows if e.get("score") is None]
+        add("## 7. Equity scores (bottom-up)")
+        add("")
+        add(f"Magic Formula (Greenblatt) 70% + quality overlay 30%, "
+            f"0–100. Method: `{EQ.get('method', 'n/a')}`. "
+            f"Coverage {len(scored)}/{len(eq_rows)}.")
+        add("")
+        if scored:
+            add("| Ticker | Score | Earnings yield | Return on cap | "
+                "Quality |")
+            add("|---|--:|--:|--:|--:|")
+            for e in scored:
+                add(f"| {e['ticker']} | **{e['score']:.0f}** | "
+                    f"{e['earnings_yield']:.3f} ({e['ey_basis']}) | "
+                    f"{e['return_on_cap']:.3f} ({e['rc_basis']}) | "
+                    f"{e['quality_sub']}/{e['quality_max']} |")
+        if nd:
+            add("")
+            add("_Not scored: "
+                + "; ".join(f"{e['ticker']} ({e['reason']})" for e in nd)
+                + "._")
+        add("")
+        add("> Caveats: yfinance proxies (EBITDA/EV or 1/PE for earnings "
+            "yield; ROA/ROE for return on capital) — not exact Greenblatt "
+            "inputs. Magic Formula is unreliable for **financials/banks** "
+            "(structurally low ROA — read Nordea's score with that in mind) "
+            "and **pre-profit names** (Episurf's negative score correctly "
+            "reflects losses but is not a 'cheapness' signal). Bottom-up "
+            "score, not a recommendation.")
+        add("")
+
     add("## Next Steps / Decisions")
     add("")
     add("1. **Do now**")
@@ -308,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         "reports/exposure_posture_*.json")
     fp = Path(a.forces) if a.forces else _latest(
         "state/montrose/forces_digest_*.md")
+    ep = _latest("reports/equity_scores_*.json")
     if hp is None:
         import sys
         sys.stderr.write(
@@ -315,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
             "refresh first)\n")
         return 2
 
-    as_of, md = build(hp, pp, fp)
+    as_of, md = build(hp, pp, fp, ep)
     out = Path(a.out) if a.out else (
         REPO_ROOT / "reports" / f"portfolio_analysis_{as_of}.md")
     out.parent.mkdir(parents=True, exist_ok=True)

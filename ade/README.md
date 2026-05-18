@@ -158,3 +158,22 @@ forces-KB update). The report header states the next scheduled review date.
 The sector map in `build_report.py` is an editable heuristic — refine as the
 book changes. Immaterial trims (< max(2000 SEK, 1% of invested)) are demoted
 to "monitor only" so the action list stays signal.
+
+## equity-score — bottom-up per-holding score
+
+`ade/equity-score/score_equities.py`: research-backed composite per holding —
+Greenblatt **Magic Formula** core (70%) + a quality/safety overlay (30%),
+0–100. Data via **yfinance** (free, no key, Nordic-capable). FMP free tier
+was unusable here (403 on every Nordic fundamental); yfinance covers the
+liquid book (9/10; funds + thin micro-caps report `n/d`, never fabricated).
+
+Yahoo lacks exact Greenblatt inputs, so documented PROXIES are used and
+labelled per name (`ey_basis`: EBITDA/EV → 1/PE → NI/MC; `rc_basis`: ROA →
+ROE). Magic Formula is a poor fit for **banks/financials** and **pre-profit
+names** — the report says so explicitly. Output:
+`reports/equity_scores_<as_of>.json`, auto-folded into the portfolio
+document (§2 Score column + §7 Equity scores). Run:
+
+```bash
+.venv/bin/python ade/equity-score/score_equities.py
+```
