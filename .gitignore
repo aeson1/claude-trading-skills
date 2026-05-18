@@ -21,6 +21,11 @@ env/
 .envrc
 .mcp.json
 
+# Secrets — never commit credentials (ADE: Supabase hosted project keys, etc.)
+.env
+.env.*
+!.env.example
+
 # Logs & temp
 logs/
 *.log
